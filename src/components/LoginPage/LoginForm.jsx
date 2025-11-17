@@ -1,15 +1,22 @@
 import React, { useState, useCallback, useMemo } from 'react'
+import axios from 'axios'
 import { block } from 'million/react'
 import { LoadingButton } from '../common/LoadingButton'
 import { 
   sanitizeInput, 
   validateEmail, 
-  formSubmitLimiter,
-  escapeHTML 
+  formSubmitLimiter
 } from '../../utils/security'
-import { debounce, measurePerformance } from '../../utils/performance'
 
-const LoginForm = block(function LoginForm({ setCurrentPage }) {
+const api = axios.create({
+  baseURL: '/api', 
+  timeout: 100000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+const LoginForm = block(function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
     email: '',
@@ -20,44 +27,113 @@ const LoginForm = block(function LoginForm({ setCurrentPage }) {
   const [lastSubmitTime, setLastSubmitTime] = useState(0)
 
   const validateForm = useCallback(() => {
-    return measurePerformance('Login Form Validation', () => {
-      const newErrors = {}
-      
-      const sanitizedEmail = sanitizeInput(formData.email)
-      if (!sanitizedEmail) {
-        newErrors.email = 'Email is required'
-      } else if (!validateEmail(sanitizedEmail)) {
-        newErrors.email = 'Invalid email address'
-      }
-      
-      const sanitizedPassword = sanitizeInput(formData.password)
-      if (!sanitizedPassword) {
-        newErrors.password = 'Password is required'
-      } else if (sanitizedPassword.length < 6) {
-        newErrors.password = 'Password must be at least 6 characters'
-      }
-      
-      setErrors(newErrors)
-      return Object.keys(newErrors).length === 0
-    })
+    const newErrors = {}
+    
+    const sanitizedEmail = sanitizeInput(formData.email)
+    if (!sanitizedEmail) {
+      newErrors.email = 'Email is required'
+    } else if (!validateEmail(sanitizedEmail)) {
+      newErrors.email = 'Invalid email address'
+    }
+    
+    const sanitizedPassword = sanitizeInput(formData.password)
+    if (!sanitizedPassword) {
+      newErrors.password = 'Password is required'
+    } else if (sanitizedPassword.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters'
+    }
+    
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
   }, [formData.email, formData.password])
 
-  // Debounced form validation for better performance
-  const debouncedValidation = useMemo(
-    () => debounce(() => {
-      if (formData.email || formData.password) {
-        validateForm()
-      }
-    }, 500),
-    [validateForm, formData.email, formData.password]
-  )
+  // API login function - using proxy
+  const handleLoginAPI = useCallback(async () => {
+    try {
+      console.log('📝 Making API call to login via proxy:', {
+        email: formData.email.substring(0, 3) + '...',
+        hasPassword: !!formData.password
+      })
 
-  const handleSubmit = useCallback((e) => {
+      // Make the actual login request through proxy
+      const response = await api.post('/v1/auth/login/', {
+        email: formData.email,
+        password: formData.password
+      })
+
+      console.log('✅ Login successful:', response.data)
+
+      // Handle successful login
+      const { token, user, refresh_token } = response.data
+      
+      // Store tokens
+      localStorage.setItem('access_token', token)
+      localStorage.setItem('refresh_token', refresh_token)
+      localStorage.setItem('user', JSON.stringify(user))
+
+      // Set default authorization header for future requests
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+
+      // Clear any existing errors
+      setErrors({})
+
+      // Success message or redirect
+      alert('Login successful!')
+      
+      return { success: true, data: response.data }
+
+    } catch (error) {
+      console.error('❌ Login failed:', error)
+      
+      let errorMessage = 'Login failed. Please try again.'
+      
+      if (error.code === 'ERR_NETWORK') {
+        errorMessage = `Network Error: Cannot connect to server.\n\nPlease ensure:\n\n• Django server is running: python manage.py runserver\n• Server is accessible at http://localhost:8000\n• Check Django terminal for errors`
+      } else if (error.response) {
+        const { status, data } = error.response
+        
+        switch (status) {
+          case 400:
+            errorMessage = data.message || data.detail || 'Invalid email or password format'
+            break
+          case 401:
+            errorMessage = data.message || data.detail || 'Invalid email or password'
+            break
+          case 403:
+            errorMessage = 'Access forbidden. Check CORS configuration.'
+            break
+          case 404:
+            errorMessage = 'API endpoint not found. Check if /api/v1/auth/login/ exists.'
+            break
+          case 405:
+            errorMessage = 'Method not allowed.'
+            break
+          case 415:
+            errorMessage = 'Unsupported media type.'
+            break
+          case 500:
+            errorMessage = 'Server error. Check Django logs.'
+            break
+          default:
+            errorMessage = data.message || data.detail || `Error ${status}`
+        }
+        
+        console.log('Backend response:', data)
+      } else if (error.request) {
+        errorMessage = 'No response received from server.'
+      }
+
+      setErrors({ general: errorMessage })
+      return { success: false, error: errorMessage }
+    }
+  }, [formData.email, formData.password])
+
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault()
     
     // Rate limiting check
     const now = Date.now()
-    if (now - lastSubmitTime < 2000) { // 2 second cooldown
+    if (now - lastSubmitTime < 2000) {
       setErrors({ general: 'Please wait before submitting again' })
       return
     }
@@ -73,37 +149,15 @@ const LoginForm = block(function LoginForm({ setCurrentPage }) {
       setIsLoading(true)
       setLastSubmitTime(now)
       
-      console.log('📝 Login form submitted:', {
-        email: formData.email.substring(0, 3) + '...', // Log safely
-        hasPassword: !!formData.password
-      })
+      // Clear previous errors
+      setErrors({})
       
-      // Simulate API call with security delay
-      setTimeout(() => {
-        setIsLoading(false)
-        
-        // Basic demo validation (remove in production)
-        const validCredentials = [
-          { email: 'john.doe@example.com', password: 'Password123' },
-          { email: 'admin@example.com', password: 'Admin123' },
-          { email: 'user@example.com', password: 'User123' }
-        ]
-        
-        const isValidUser = validCredentials.some(
-          cred => cred.email === formData.email && cred.password === formData.password
-        )
-        
-        if (isValidUser) {
-          alert('Login successful! Dashboard is temporarily disabled.')
-        } else {
-          alert('Login failed! Please check your email and password.')
-          setErrors({ 
-            general: 'Invalid email or password. Please try again.' 
-          })
-        }
-      }, 1000 + Math.random() * 1000) // Random delay for security
+      // Call the API function
+      await handleLoginAPI()
+      
+      setIsLoading(false)
     }
-  }, [formData, lastSubmitTime, validateForm])
+  }, [formData, lastSubmitTime, validateForm, handleLoginAPI])
 
   const handleChange = useCallback((e) => {
     const { name, value } = e.target
@@ -122,9 +176,14 @@ const LoginForm = block(function LoginForm({ setCurrentPage }) {
       }))
     }
     
-    // Trigger debounced validation
-    debouncedValidation()
-  }, [errors, debouncedValidation])
+    // Clear general error when user starts typing
+    if (errors.general) {
+      setErrors(prev => ({
+        ...prev,
+        general: ''
+      }))
+    }
+  }, [errors])
 
   const togglePasswordVisibility = useCallback(() => {
     setShowPassword(!showPassword)
@@ -208,7 +267,7 @@ const LoginForm = block(function LoginForm({ setCurrentPage }) {
     <form onSubmit={handleSubmit} className="space-y-5" noValidate>
       {errors.general && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-red-600 text-sm text-center">{errors.general}</p>
+          <p className="text-red-600 text-sm text-center whitespace-pre-line">{errors.general}</p>
         </div>
       )}
       
@@ -231,6 +290,7 @@ const LoginForm = block(function LoginForm({ setCurrentPage }) {
       </div>
 
       <LoadingButton
+        id="Login"
         type="submit"
         isLoading={isLoading}
         loadingText="Signing in..."

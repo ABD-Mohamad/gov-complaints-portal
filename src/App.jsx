@@ -4,7 +4,6 @@ import ErrorBoundary from './components/common/ErrorBoundary'
 
 // Lazy load components for better performance
 const LoginPage = lazy(() => import('./components/LoginPage/LoginPage'))
-const RegisterPage = lazy(() => import('./components/RegisterPage/RegisterPage'))
 
 // Loading component for Suspense fallback
 const LoadingFallback = () => (
@@ -27,8 +26,7 @@ const App = block(function App() {
     switch (currentPage) {
       case 'login':
         return <LoginPage setCurrentPage={setCurrentPage} />
-      case 'register':
-        return <RegisterPage setCurrentPage={setCurrentPage} />
+      // Remove register case entirely
       default:
         return <LoginPage setCurrentPage={setCurrentPage} />
     }

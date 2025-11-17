@@ -13,5 +13,18 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'million']
+  },
+  server: {
+    port: 5173,
+    host: true,
+    cors: true,
+    // Add proxy to avoid CSP issues
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      }
+    }
   }
 })

@@ -2,7 +2,7 @@ import React from 'react'
 import { Layout, Card, Footer, Divider } from '../common/Layout'
 import LoginForm from './LoginForm'
 
-export default function LoginPage({ setCurrentPage }) {
+export default function LoginPage() { // Remove setCurrentPage prop since it's not used
   return (
     <Layout>
       <div className="text-center mb-8">
@@ -17,19 +17,7 @@ export default function LoginPage({ setCurrentPage }) {
 
       <Card>
         <h2 className="text-2xl font-bold text-black mb-6">Sign In</h2>
-        <LoginForm setCurrentPage={setCurrentPage} />
-        
-        <Divider />
-        
-        <p className="text-center text-gray-600">
-          Don't have an account?{' '}
-          <button 
-            onClick={() => setCurrentPage('register')} 
-            className="text-[#255F38] hover:text-[#1d4829] font-semibold"
-          >
-            Register here
-          </button>
-        </p>
+        <LoginForm /> {/* Remove setCurrentPage prop */}
       </Card>
 
       <Footer />
